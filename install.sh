@@ -271,11 +271,75 @@ fi
 # 加载配置
 . /root/.gs/.env
 
+# 检查 Docker 安装的基础要求（内核版本、架构、cgroup 支持等）
+check_docker_basic_requirements() {
+    echo -e "${CYELLOW}正在检查 Docker 安装的基础要求...${CEND}"
+    
+    # 检查 1: 系统架构（必须是 64 位）
+    local ARCH=$(uname -m)
+    if [[ "$ARCH" =~ ^(x86_64|amd64|aarch64|arm64|ppc64le|s390x)$ ]]; then
+        echo -e "${CGREEN}✓ 系统架构检查通过: $ARCH${CEND}"
+    else
+        echo -e "${CYELLOW}⚠ 警告: 系统架构 $ARCH 可能不受 Docker 官方支持，但将继续尝试安装${CEND}"
+    fi
+    
+    # 检查 2: 内核版本（Docker 要求内核 >= 3.10）
+    local KERNEL_VERSION=$(uname -r)
+    local KERNEL_MAJOR=$(echo "$KERNEL_VERSION" | cut -d. -f1)
+    local KERNEL_MINOR=$(echo "$KERNEL_VERSION" | cut -d. -f2 | cut -d- -f1)  # 处理带后缀的版本号如 3.10.0-957.el7.x86_64
+    
+    # 对于 RHEL/CentOS 系列，内核 >= 3.10；对于其他系统，内核 >= 3.10
+    # 如果主版本号 > 3，或者主版本号 = 3 且次版本号 >= 10，则满足要求
+    if [ "$KERNEL_MAJOR" -gt 3 ] || ([ "$KERNEL_MAJOR" -eq 3 ] && [ "${KERNEL_MINOR:-0}" -ge 10 ] 2>/dev/null); then
+        echo -e "${CGREEN}✓ 内核版本检查通过: $KERNEL_VERSION${CEND}"
+    else
+        echo -e "${CRED}✗ 错误: 内核版本 $KERNEL_VERSION 过低，Docker 需要内核 >= 3.10${CEND}"
+        return 1
+    fi
+    
+    # 检查 3: cgroup 支持（检查 /sys/fs/cgroup 目录是否存在）
+    if [ -d "/sys/fs/cgroup" ] || [ -d "/sys/fs/cgroup2" ]; then
+        echo -e "${CGREEN}✓ Cgroup 支持检查通过${CEND}"
+    else
+        echo -e "${CYELLOW}⚠ 警告: 未检测到 cgroup 文件系统，但可能仍然支持 Docker${CEND}"
+    fi
+    
+    # 检查 4: 包管理器可用性
+    if command_exists yum || command_exists dnf || command_exists apt-get || command_exists apt; then
+        local PM_FOUND=""
+        command_exists yum && PM_FOUND="yum" || true
+        command_exists dnf && PM_FOUND="dnf" || true
+        command_exists apt-get && PM_FOUND="apt-get" || true
+        command_exists apt && PM_FOUND="apt" || true
+        echo -e "${CGREEN}✓ 包管理器检查通过: $PM_FOUND${CEND}"
+    else
+        echo -e "${CRED}✗ 错误: 未找到支持的包管理器（yum/dnf/apt-get/apt）${CEND}"
+        return 1
+    fi
+    
+    echo -e "${CGREEN}基础要求检查通过，系统满足 Docker 安装的基本条件${CEND}"
+    return 0
+}
+
 # 第一步，检测当前系统是否可以安装 docker 及 docker-compose
+# 先尝试使用 check-docker-env.sh 进行标准检查
 bash check-docker-env.sh --dry-run >/dev/null 2>&1
-if [ $? != 0 ]; then
-    echo -e "${CRED}当前服务器系统暂不支持本环境，请联系客服QQ:1303588722 反馈并获取适合安装的环境 ${CEND}"
-    exit 1
+ENV_CHECK_RESULT=$?
+
+if [ $ENV_CHECK_RESULT != 0 ]; then
+    # 如果标准检查失败，则检查基础要求
+    echo -e "${CYELLOW}标准系统检查未通过，正在检查基础安装要求...${CEND}"
+    
+    if ! check_docker_basic_requirements; then
+        echo -e "${CRED}当前服务器系统不满足 Docker 安装的基础要求，无法继续安装${CEND}"
+        echo -e "${CRED}请联系客服QQ:1303588722 反馈并获取适合安装的环境 ${CEND}"
+        exit 1
+    else
+        echo -e "${CYELLOW}系统满足 Docker 安装的基础要求，将继续尝试安装...${CEND}"
+        echo -e "${CYELLOW}注意: 如果安装过程中出现问题，请联系客服QQ:1303588722${CEND}"
+    fi
+else
+    echo -e "${CYELLOW}系统检查通过，可以正常安装 Docker 环境${CEND}"
 fi
 
 # 第二步：判断并兼容离线环境
@@ -307,8 +371,8 @@ ${CYELLOW}
 ◎           
 ◎  编号1：Centos 6 + Mysql5.1 (默认，输入1或不输，按回车)  ---> （老品种，没有改引擎和数据库）
 ◎  编号2：Centos 7 + Mysql5.1 (输入2，按回车) ---> （老品种，没有改引擎和数据库）
-◎  编号3：Centos 7 + Mysql5.7 (输入3，按回车) --->  (大河马引擎，大背包，逍遥子引擎，有改引擎和数据库的)
-◎  编号4：Centos 9 + Mysql8.0 (输入4，按回车) --->  (源端64位引擎专用)
+◎  编号3：Centos 7 + Mysql5.7 (输入3，按回车) --->  (有改引擎，hook插件，需要自己替换SQL文件)
+◎  编号4：Centos 9 + Mysql8.0 (输入4，按回车) --->  (源端64位引擎专用,需要自己替换SQL文件和修改ini文件)
 ◎
 ※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※
 ${CEND}
