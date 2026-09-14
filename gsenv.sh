@@ -75,4 +75,12 @@ if [ ! -f /root/gs_docker_ce.tar.gz ] && [ ! -f /root/gstlenv_offline.tar.gz ] &
 else
     # 安装并写入安装日志
     cd /root/.tlgame && bash install.sh local | tee -a /root/.tlgame/install.log
+    # ===== 自动修复 docker-compose.yml 的冒号错误 =====
+if [ -f /tlgame/docker-compose.yml ]; then
+    sed -i 's|/tlgame/redis:/data/:rw|/tlgame/redis:/data|g' /tlgame/docker-compose.yml
+    sed -i 's|/tlgame/redis/:/usr/local/etc/redis/:rw|/tlgame/redis:/usr/local/etc/redis|g' /tlgame/docker-compose.yml
+    echo -e "\e[1;32m已自动修复 docker-compose.yml，正在重新启动容器...\e[0m"
+    cd /tlgame && docker-compose up -d
+fi
+# ================================================
 fi
